@@ -4,7 +4,7 @@ import { useState, useEffect } from "react";
 import { useAccount, useWalletClient, usePublicClient, useConnect, useDisconnect, useSwitchChain } from "wagmi";
 import { ConnectButton } from '@rainbow-me/rainbowkit';
 import { ethers } from "ethers";
-import { UploadCloud, File as FileIcon, Download, Key, Shield, Loader2 } from "lucide-react";
+import { UploadCloud, File as FileIcon, Download, Key, Shield, Loader2, Trash2, Edit3 } from "lucide-react";
 import { encryptFile, decryptFile, uploadToPinata, fetchFromIPFS, deriveKeyFromSignature } from "../../utils/ipfs";
 import { FileVaultABI, FileVaultAddress } from "../../utils/contract";
 
@@ -25,6 +25,8 @@ export default function Home() {
   const [encryptionKey, setEncryptionKey] = useState<string | null>(null);
   const [isDerivingKey, setIsDerivingKey] = useState(false);
   const [downloadingCid, setDownloadingCid] = useState<string | null>(null);
+  const [deletingCid, setDeletingCid] = useState<string | null>(null);
+  const [renamingCid, setRenamingCid] = useState<string | null>(null);
 
   // Derive encryption key
   const deriveKey = async () => {
@@ -142,6 +144,51 @@ export default function Home() {
       alert("Failed to view file. It may be corrupted or you don't have the correct key.");
     } finally {
       setDownloadingCid(null);
+    }
+  };
+
+  // Handle Delete
+  const handleDelete = async (cid: string) => {
+    if (!confirm("Are you sure you want to delete this file? This action cannot be undone.")) return;
+    
+    setDeletingCid(cid);
+    try {
+      const provider = new ethers.BrowserProvider((window as any).ethereum);
+      const signer = await provider.getSigner();
+      const contract = new ethers.Contract(FileVaultAddress, FileVaultABI, signer);
+      
+      const tx = await contract.deleteFile(cid);
+      await tx.wait();
+      
+      fetchMyFiles();
+    } catch (error) {
+      console.error("Delete error:", error);
+      alert("Failed to delete file.");
+    } finally {
+      setDeletingCid(null);
+    }
+  };
+
+  // Handle Rename
+  const handleRename = async (cid: string, currentName: string) => {
+    const newName = prompt("Enter new file name:", currentName);
+    if (!newName || newName === currentName) return;
+    
+    setRenamingCid(cid);
+    try {
+      const provider = new ethers.BrowserProvider((window as any).ethereum);
+      const signer = await provider.getSigner();
+      const contract = new ethers.Contract(FileVaultAddress, FileVaultABI, signer);
+      
+      const tx = await contract.renameFile(cid, newName);
+      await tx.wait();
+      
+      fetchMyFiles();
+    } catch (error) {
+      console.error("Rename error:", error);
+      alert("Failed to rename file.");
+    } finally {
+      setRenamingCid(null);
     }
   };
 
@@ -295,6 +342,31 @@ export default function Home() {
                           <><Download className="w-4 h-4" /> Download</>
                         )}
                       </button>
+                      <div className="flex gap-2 w-full mt-2">
+                        <button
+                          onClick={() => handleRename(file.ipfsCID, file.fileName)}
+                          disabled={renamingCid === file.ipfsCID || deletingCid === file.ipfsCID}
+                          className="flex flex-1 items-center justify-center gap-2 py-2 bg-gray-500/10 hover:bg-gray-500/20 text-gray-300 border border-gray-500/20 hover:border-gray-500/40 rounded-xl text-sm font-semibold transition-all duration-300 disabled:opacity-50 disabled:cursor-not-allowed"
+                        >
+                          {renamingCid === file.ipfsCID ? (
+                            <Loader2 className="w-4 h-4 animate-spin" />
+                          ) : (
+                            <><Edit3 className="w-4 h-4" /> Rename</>
+                          )}
+                        </button>
+
+                        <button
+                          onClick={() => handleDelete(file.ipfsCID)}
+                          disabled={renamingCid === file.ipfsCID || deletingCid === file.ipfsCID}
+                          className="flex flex-1 items-center justify-center gap-2 py-2 bg-red-500/10 hover:bg-red-500/20 text-red-400 border border-red-500/20 hover:border-red-500/40 rounded-xl text-sm font-semibold transition-all duration-300 disabled:opacity-50 disabled:cursor-not-allowed"
+                        >
+                          {deletingCid === file.ipfsCID ? (
+                            <Loader2 className="w-4 h-4 animate-spin" />
+                          ) : (
+                            <><Trash2 className="w-4 h-4" /> Delete</>
+                          )}
+                        </button>
+                      </div>
                     </div>
                   ))}
                 </div>

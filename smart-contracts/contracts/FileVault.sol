@@ -20,6 +20,8 @@ contract FileVault {
 
     // Events
     event FileUploaded(address indexed owner, string cid, string fileName, uint256 timestamp);
+    event FileRenamed(address indexed owner, string cid, string newFileName);
+    event FileDeleted(address indexed owner, string cid);
     event AccessGranted(address indexed owner, address indexed user, string cid);
     event AccessRevoked(address indexed owner, address indexed user, string cid);
 
@@ -43,6 +45,36 @@ contract FileVault {
         accessRegistry[_cid][msg.sender] = true;
 
         emit FileUploaded(msg.sender, _cid, _fileName, block.timestamp);
+    }
+
+    function renameFile(string memory _cid, string memory _newName) external onlyFileOwner(_cid) {
+        File[] storage myFiles = userVaults[msg.sender];
+        for (uint256 i = 0; i < myFiles.length; i++) {
+            if (keccak256(abi.encodePacked(myFiles[i].ipfsCID)) == keccak256(abi.encodePacked(_cid))) {
+                myFiles[i].fileName = _newName;
+                emit FileRenamed(msg.sender, _cid, _newName);
+                return;
+            }
+        }
+    }
+
+    function deleteFile(string memory _cid) external onlyFileOwner(_cid) {
+        File[] storage myFiles = userVaults[msg.sender];
+        for (uint256 i = 0; i < myFiles.length; i++) {
+            if (keccak256(abi.encodePacked(myFiles[i].ipfsCID)) == keccak256(abi.encodePacked(_cid))) {
+                // Swap with the last element
+                myFiles[i] = myFiles[myFiles.length - 1];
+                // Pop the last element
+                myFiles.pop();
+                
+                // Clear mappings
+                delete fileOwner[_cid];
+                delete accessRegistry[_cid][msg.sender];
+
+                emit FileDeleted(msg.sender, _cid);
+                return;
+            }
+        }
     }
 
     function shareFile(string memory _cid, address _user) external onlyFileOwner(_cid) {
