@@ -3,6 +3,7 @@
 import { useState, useEffect } from "react";
 import { useAccount, useWalletClient, usePublicClient, useConnect, useDisconnect, useSwitchChain } from "wagmi";
 import { injected } from "wagmi/connectors";
+import { ConnectButton } from '@rainbow-me/rainbowkit';
 import { ethers } from "ethers";
 import { UploadCloud, File as FileIcon, Download, Key, Shield } from "lucide-react";
 import { encryptFile, decryptFile, uploadToPinata, fetchFromIPFS, deriveKeyFromSignature } from "../../utils/ipfs";
@@ -13,7 +14,7 @@ export default function Home() {
   const { switchChain } = useSwitchChain();
   const { data: walletClient } = useWalletClient();
   const publicClient = usePublicClient();
-  const { connect } = useConnect();
+  const { connectors, connect } = useConnect();
   const { disconnect } = useDisconnect();
 
   const [mounted, setMounted] = useState(false);
@@ -67,7 +68,7 @@ export default function Home() {
 
   // Handle Upload
   const handleUpload = async () => {
-    if (!selectedFile || !encryptionKey || !walletClient) return;
+    if (!selectedFile || !walletClient || !address) return;
     
     // 50MB File Size Limit to prevent browser memory crash
     const MAX_SIZE = 50 * 1024 * 1024;
@@ -76,10 +77,24 @@ export default function Home() {
       return;
     }
 
+    let currentKey = encryptionKey;
+    if (!currentKey) {
+      try {
+        const message = "Unlock my Decentralized File Vault";
+        const signature = await walletClient.signMessage({ account: address as `0x${string}`, message });
+        currentKey = deriveKeyFromSignature(signature);
+        setEncryptionKey(currentKey);
+      } catch (error) {
+        console.error("Error deriving key:", error);
+        alert("Failed to derive encryption key. You must sign the message to encrypt files.");
+        return;
+      }
+    }
+
     setIsUploading(true);
     try {
       // 1. Encrypt File
-      const encryptedData = await encryptFile(selectedFile, encryptionKey);
+      const encryptedData = await encryptFile(selectedFile, currentKey);
       
       // 2. Upload to IPFS via Pinata
       const cid = await uploadToPinata(encryptedData, selectedFile.name);
@@ -135,32 +150,7 @@ export default function Home() {
             Decentralized Vault
           </h1>
         </div>
-        {(() => {
-          if (!isConnectedSafe) {
-            return (
-              <button onClick={() => connect({ connector: injected() })} type="button" className="bg-blue-600 hover:bg-blue-500 text-white px-5 py-2.5 rounded-xl font-semibold transition-all shadow-lg">
-                Connect Wallet
-              </button>
-            );
-          }
-          if (!isRightNetwork) {
-            return (
-              <button onClick={() => switchChain({ chainId: 31337 })} type="button" className="bg-red-600 hover:bg-red-500 text-white px-5 py-2.5 rounded-xl font-semibold transition-all shadow-lg">
-                Switch Network
-              </button>
-            );
-          }
-          return (
-            <div className="flex gap-3">
-              <div className="bg-gray-800 text-white px-4 py-2.5 rounded-xl font-semibold border border-gray-700 flex items-center">
-                {address?.slice(0, 6)}...{address?.slice(-4)}
-              </div>
-              <button onClick={() => disconnect()} type="button" className="bg-red-600/20 hover:bg-red-600 text-red-500 hover:text-white px-4 py-2.5 rounded-xl font-semibold transition-all border border-red-700/50">
-                Disconnect
-              </button>
-            </div>
-          );
-        })()}
+        <ConnectButton />
       </header>
       
       <main className="max-w-6xl mx-auto grid grid-cols-1 md:grid-cols-3 gap-8">
@@ -189,7 +179,7 @@ export default function Home() {
             )}
           </div>
 
-          <div className={`bg-gray-900 border border-gray-800 rounded-2xl p-6 shadow-xl ${!encryptionKey ? 'opacity-50 pointer-events-none' : ''}`}>
+          <div className={`bg-gray-900 border border-gray-800 rounded-2xl p-6 shadow-xl ${!isConnectedSafe ? 'opacity-50 pointer-events-none' : ''}`}>
             <h2 className="text-xl font-semibold mb-4 flex items-center gap-2">
               <UploadCloud className="w-5 h-5 text-blue-400" /> Upload File
             </h2>

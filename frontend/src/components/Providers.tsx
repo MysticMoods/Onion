@@ -2,17 +2,15 @@
 
 import * as React from "react";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { WagmiProvider, createConfig, http } from "wagmi";
+import { WagmiProvider } from "wagmi";
 import { hardhat, sepolia } from "wagmi/chains";
-import { injected } from "wagmi/connectors";
+import { getDefaultConfig, RainbowKitProvider, darkTheme } from "@rainbow-me/rainbowkit";
 
-const config = createConfig({
+const config = getDefaultConfig({
+  appName: 'Decentralized Vault',
+  projectId: '00000000000000000000000000000000',
   chains: [hardhat, sepolia],
-  connectors: [injected()],
-  transports: {
-    [hardhat.id]: http(),
-    [sepolia.id]: http(),
-  },
+  ssr: true,
 });
 
 export function Providers({ children }: { children: React.ReactNode }) {
@@ -21,7 +19,9 @@ export function Providers({ children }: { children: React.ReactNode }) {
   return (
     <WagmiProvider config={config}>
       <QueryClientProvider client={queryClient}>
-        {children}
+        <RainbowKitProvider theme={darkTheme()}>
+          {children}
+        </RainbowKitProvider>
       </QueryClientProvider>
     </WagmiProvider>
   );
