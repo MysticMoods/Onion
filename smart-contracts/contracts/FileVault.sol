@@ -15,26 +15,23 @@ contract FileVault {
     // mapping(cid => mapping(user => hasAccess))
     mapping(string => mapping(address => bool)) public accessRegistry;
 
+    // Mapping to track the true owner of a file CID
+    mapping(string => address) public fileOwner;
+
     // Events
     event FileUploaded(address indexed owner, string cid, string fileName, uint256 timestamp);
     event AccessGranted(address indexed owner, address indexed user, string cid);
     event AccessRevoked(address indexed owner, address indexed user, string cid);
 
     modifier onlyFileOwner(string memory _cid) {
-        bool isOwner = false;
-        File[] memory files = userVaults[msg.sender];
-        for (uint i = 0; i < files.length; i++) {
-            // Comparing strings by hashing them
-            if (keccak256(abi.encodePacked(files[i].ipfsCID)) == keccak256(abi.encodePacked(_cid))) {
-                isOwner = true;
-                break;
-            }
-        }
-        require(isOwner, "Not the owner of this file");
+        require(fileOwner[_cid] == msg.sender, "Not the owner of this file");
         _;
     }
 
     function uploadFile(string memory _cid, string memory _fileName) external {
+        require(fileOwner[_cid] == address(0), "File CID already registered");
+        fileOwner[_cid] = msg.sender;
+
         File memory newFile = File({
             ipfsCID: _cid,
             fileName: _fileName,
