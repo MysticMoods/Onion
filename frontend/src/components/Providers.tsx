@@ -2,25 +2,26 @@
 
 import * as React from "react";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { WagmiProvider } from "wagmi";
-import { getDefaultConfig, RainbowKitProvider } from "@rainbow-me/rainbowkit";
+import { WagmiProvider, createConfig, http } from "wagmi";
 import { hardhat, sepolia } from "wagmi/chains";
-import "@rainbow-me/rainbowkit/styles.css";
+import { injected } from "wagmi/connectors";
 
-const config = getDefaultConfig({
-  appName: "Decentralized File Vault",
-  projectId: "4b971e95e7c62c3f87309cb3848b375b", // placeholder project ID
+const config = createConfig({
   chains: [hardhat, sepolia],
-  ssr: true, // If your dApp uses server side rendering (SSR)
+  connectors: [injected()],
+  transports: {
+    [hardhat.id]: http(),
+    [sepolia.id]: http(),
+  },
 });
 
-const queryClient = new QueryClient();
-
 export function Providers({ children }: { children: React.ReactNode }) {
+  const [queryClient] = React.useState(() => new QueryClient());
+
   return (
     <WagmiProvider config={config}>
       <QueryClientProvider client={queryClient}>
-        <RainbowKitProvider>{children}</RainbowKitProvider>
+        {children}
       </QueryClientProvider>
     </WagmiProvider>
   );

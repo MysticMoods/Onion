@@ -78,16 +78,28 @@ export const uploadToPinata = async (encryptedData: string, fileName: string): P
 };
 
 /**
- * Fetches encrypted content from IPFS via a public gateway.
+ * Fetches encrypted content from IPFS with multi-gateway fallback.
  */
 export const fetchFromIPFS = async (cid: string): Promise<string> => {
-  const url = `https://gateway.pinata.cloud/ipfs/${cid}`;
-  const response = await fetch(url);
-  
-  if (!response.ok) {
-    throw new Error(`Error fetching from IPFS: ${response.statusText}`);
+  const gateways = [
+    `https://gateway.pinata.cloud/ipfs/${cid}`,
+    `https://ipfs.io/ipfs/${cid}`,
+    `https://dweb.link/ipfs/${cid}`
+  ];
+
+  for (const url of gateways) {
+    try {
+      const response = await fetch(url);
+      if (response.ok) {
+        const data = await response.json();
+        if (data && data.encryptedFile) {
+          return data.encryptedFile;
+        }
+      }
+    } catch (e) {
+      console.warn(`Gateway failed: ${url}`);
+    }
   }
 
-  const data = await response.json();
-  return data.encryptedFile;
+  throw new Error("Failed to fetch from all IPFS gateways.");
 };

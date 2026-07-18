@@ -1,4 +1,4 @@
-export const FileVaultAddress = "0xCf7Ed3AccA5a467e9e704C703E8D87F634fB0Fc9"; // Local hardhat deploy address
+export const FileVaultAddress = "0x9fE46736679d2D9a65F0992F2272dE9f3c7fa6e0";
 
 export const FileVaultABI = [
   "function uploadFile(string memory _cid, string memory _fileName) external",

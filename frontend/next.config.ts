@@ -1,6 +1,7 @@
 import type { NextConfig } from "next";
 
 const nextConfig: NextConfig = {
+  allowedDevOrigins: ["169.254.247.25", "localhost", "127.0.0.1"],
   turbopack: {
     // @coinbase/cdp-sdk (pulled in transitively via RainbowKit's default
     // Base Account wallet) lazily imports optional `@x402/*` peer deps inside

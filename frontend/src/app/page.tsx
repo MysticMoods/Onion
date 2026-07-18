@@ -1,17 +1,26 @@
 "use client";
 
 import { useState, useEffect } from "react";
-import { ConnectButton } from "@rainbow-me/rainbowkit";
-import { useAccount, useWalletClient, usePublicClient } from "wagmi";
+import { useAccount, useWalletClient, usePublicClient, useConnect, useDisconnect, useSwitchChain } from "wagmi";
+import { injected } from "wagmi/connectors";
 import { ethers } from "ethers";
 import { UploadCloud, File as FileIcon, Download, Key, Shield } from "lucide-react";
 import { encryptFile, decryptFile, uploadToPinata, fetchFromIPFS, deriveKeyFromSignature } from "../../utils/ipfs";
 import { FileVaultABI, FileVaultAddress } from "../../utils/contract";
 
 export default function Home() {
-  const { address, isConnected } = useAccount();
+  const { address, isConnected, chain } = useAccount();
+  const { switchChain } = useSwitchChain();
   const { data: walletClient } = useWalletClient();
   const publicClient = usePublicClient();
+  const { connect } = useConnect();
+  const { disconnect } = useDisconnect();
+
+  const [mounted, setMounted] = useState(false);
+  useEffect(() => setMounted(true), []);
+
+  const isConnectedSafe = mounted && isConnected;
+  const isRightNetwork = chain?.id === 31337;
 
   const [files, setFiles] = useState<any[]>([]);
   const [selectedFile, setSelectedFile] = useState<File | null>(null);
@@ -24,7 +33,7 @@ export default function Home() {
     try {
       // Prompt user to sign a message to derive the key
       const message = "Unlock my Decentralized File Vault";
-      const signature = await walletClient.signMessage({ message });
+      const signature = await walletClient.signMessage({ account: address as `0x${string}`, message });
       const key = deriveKeyFromSignature(signature);
       setEncryptionKey(key);
     } catch (error) {
@@ -35,7 +44,7 @@ export default function Home() {
 
   // Fetch files from Smart Contract
   const fetchMyFiles = async () => {
-    if (!address || !publicClient) return;
+    if (!address || !publicClient || !isRightNetwork) return;
     try {
       const provider = new ethers.BrowserProvider((window as any).ethereum);
       const ethersContract = new ethers.Contract(FileVaultAddress, FileVaultABI, provider);
@@ -48,7 +57,7 @@ export default function Home() {
   };
 
   useEffect(() => {
-    if (isConnected) {
+    if (isConnectedSafe && isRightNetwork) {
       fetchMyFiles();
     } else {
       setFiles([]);
@@ -59,6 +68,14 @@ export default function Home() {
   // Handle Upload
   const handleUpload = async () => {
     if (!selectedFile || !encryptionKey || !walletClient) return;
+    
+    // 50MB File Size Limit to prevent browser memory crash
+    const MAX_SIZE = 50 * 1024 * 1024;
+    if (selectedFile.size > MAX_SIZE) {
+      alert("File is too large! Maximum allowed size is 50MB.");
+      return;
+    }
+
     setIsUploading(true);
     try {
       // 1. Encrypt File
@@ -118,9 +135,34 @@ export default function Home() {
             Decentralized Vault
           </h1>
         </div>
-        <ConnectButton />
+        {(() => {
+          if (!isConnectedSafe) {
+            return (
+              <button onClick={() => connect({ connector: injected() })} type="button" className="bg-blue-600 hover:bg-blue-500 text-white px-5 py-2.5 rounded-xl font-semibold transition-all shadow-lg">
+                Connect Wallet
+              </button>
+            );
+          }
+          if (!isRightNetwork) {
+            return (
+              <button onClick={() => switchChain({ chainId: 31337 })} type="button" className="bg-red-600 hover:bg-red-500 text-white px-5 py-2.5 rounded-xl font-semibold transition-all shadow-lg">
+                Switch Network
+              </button>
+            );
+          }
+          return (
+            <div className="flex gap-3">
+              <div className="bg-gray-800 text-white px-4 py-2.5 rounded-xl font-semibold border border-gray-700 flex items-center">
+                {address?.slice(0, 6)}...{address?.slice(-4)}
+              </div>
+              <button onClick={() => disconnect()} type="button" className="bg-red-600/20 hover:bg-red-600 text-red-500 hover:text-white px-4 py-2.5 rounded-xl font-semibold transition-all border border-red-700/50">
+                Disconnect
+              </button>
+            </div>
+          );
+        })()}
       </header>
-
+      
       <main className="max-w-6xl mx-auto grid grid-cols-1 md:grid-cols-3 gap-8">
         
         {/* Left Column - Actions */}
@@ -129,7 +171,7 @@ export default function Home() {
             <h2 className="text-xl font-semibold mb-4 flex items-center gap-2">
               <Key className="w-5 h-5 text-purple-400" /> Vault Status
             </h2>
-            {isConnected ? (
+            {isConnectedSafe ? (
               encryptionKey ? (
                 <div className="text-green-400 bg-green-400/10 p-3 rounded-lg text-sm flex items-center gap-2">
                   <Shield className="w-4 h-4" /> Vault Unlocked
@@ -179,7 +221,7 @@ export default function Home() {
               <FileIcon className="w-5 h-5 text-gray-400" /> My Encrypted Files
             </h2>
             
-            {!isConnected ? (
+            {!isConnectedSafe ? (
               <div className="flex flex-col items-center justify-center h-64 text-gray-500">
                 <Shield className="w-12 h-12 mb-4 opacity-20" />
                 <p>Connect wallet to view files</p>
