@@ -2,20 +2,16 @@
 
 import { useState, useEffect } from "react";
 import { useAccount, useWalletClient, usePublicClient, useConnect, useDisconnect, useSwitchChain } from "wagmi";
-import { injected } from "wagmi/connectors";
 import { ConnectButton } from '@rainbow-me/rainbowkit';
 import { ethers } from "ethers";
-import { UploadCloud, File as FileIcon, Download, Key, Shield } from "lucide-react";
+import { UploadCloud, File as FileIcon, Download, Key, Shield, Loader2 } from "lucide-react";
 import { encryptFile, decryptFile, uploadToPinata, fetchFromIPFS, deriveKeyFromSignature } from "../../utils/ipfs";
 import { FileVaultABI, FileVaultAddress } from "../../utils/contract";
 
 export default function Home() {
   const { address, isConnected, chain } = useAccount();
-  const { switchChain } = useSwitchChain();
   const { data: walletClient } = useWalletClient();
   const publicClient = usePublicClient();
-  const { connectors, connect } = useConnect();
-  const { disconnect } = useDisconnect();
 
   const [mounted, setMounted] = useState(false);
   useEffect(() => setMounted(true), []);
@@ -27,12 +23,14 @@ export default function Home() {
   const [selectedFile, setSelectedFile] = useState<File | null>(null);
   const [isUploading, setIsUploading] = useState(false);
   const [encryptionKey, setEncryptionKey] = useState<string | null>(null);
+  const [isDerivingKey, setIsDerivingKey] = useState(false);
+  const [downloadingCid, setDownloadingCid] = useState<string | null>(null);
 
   // Derive encryption key
   const deriveKey = async () => {
     if (!walletClient || !address) return;
+    setIsDerivingKey(true);
     try {
-      // Prompt user to sign a message to derive the key
       const message = "Unlock my Decentralized File Vault";
       const signature = await walletClient.signMessage({ account: address as `0x${string}`, message });
       const key = deriveKeyFromSignature(signature);
@@ -40,6 +38,8 @@ export default function Home() {
     } catch (error) {
       console.error("Error deriving key:", error);
       alert("Failed to derive encryption key. You must sign the message.");
+    } finally {
+      setIsDerivingKey(false);
     }
   };
 
@@ -64,13 +64,12 @@ export default function Home() {
       setFiles([]);
       setEncryptionKey(null);
     }
-  }, [isConnected, address]);
+  }, [isConnected, address, isRightNetwork]);
 
   // Handle Upload
   const handleUpload = async () => {
     if (!selectedFile || !walletClient || !address) return;
     
-    // 50MB File Size Limit to prevent browser memory crash
     const MAX_SIZE = 50 * 1024 * 1024;
     if (selectedFile.size > MAX_SIZE) {
       alert("File is too large! Maximum allowed size is 50MB.");
@@ -80,6 +79,7 @@ export default function Home() {
     let currentKey = encryptionKey;
     if (!currentKey) {
       try {
+        setIsDerivingKey(true);
         const message = "Unlock my Decentralized File Vault";
         const signature = await walletClient.signMessage({ account: address as `0x${string}`, message });
         currentKey = deriveKeyFromSignature(signature);
@@ -87,7 +87,10 @@ export default function Home() {
       } catch (error) {
         console.error("Error deriving key:", error);
         alert("Failed to derive encryption key. You must sign the message to encrypt files.");
+        setIsDerivingKey(false);
         return;
+      } finally {
+        setIsDerivingKey(false);
       }
     }
 
@@ -107,7 +110,6 @@ export default function Home() {
       const tx = await contract.uploadFile(cid, selectedFile.name);
       await tx.wait();
 
-      alert("File uploaded successfully!");
       setSelectedFile(null);
       fetchMyFiles();
     } catch (error) {
@@ -124,11 +126,11 @@ export default function Home() {
       alert("Please unlock your vault first to decrypt files.");
       return;
     }
+    setDownloadingCid(cid);
     try {
       const encryptedData = await fetchFromIPFS(cid);
       const decryptedDataUrl = decryptFile(encryptedData, encryptionKey);
       
-      // Create a temporary link to download/view
       const a = document.createElement('a');
       a.href = decryptedDataUrl;
       a.download = fileName;
@@ -138,114 +140,170 @@ export default function Home() {
     } catch (error) {
       console.error("Error viewing file:", error);
       alert("Failed to view file. It may be corrupted or you don't have the correct key.");
+    } finally {
+      setDownloadingCid(null);
     }
   };
 
   return (
-    <div className="min-h-screen bg-gray-950 text-gray-100 p-8 font-sans">
-      <header className="max-w-6xl mx-auto flex justify-between items-center mb-12">
-        <div className="flex items-center gap-2">
-          <Shield className="w-8 h-8 text-blue-500" />
-          <h1 className="text-2xl font-bold bg-clip-text text-transparent bg-gradient-to-r from-blue-400 to-purple-500">
-            Decentralized Vault
-          </h1>
-        </div>
-        <ConnectButton />
-      </header>
+    <div className="min-h-screen bg-[#050505] text-gray-100 font-sans relative overflow-hidden">
       
-      <main className="max-w-6xl mx-auto grid grid-cols-1 md:grid-cols-3 gap-8">
-        
-        {/* Left Column - Actions */}
-        <div className="md:col-span-1 space-y-6">
-          <div className="bg-gray-900 border border-gray-800 rounded-2xl p-6 shadow-xl">
-            <h2 className="text-xl font-semibold mb-4 flex items-center gap-2">
-              <Key className="w-5 h-5 text-purple-400" /> Vault Status
-            </h2>
-            {isConnectedSafe ? (
-              encryptionKey ? (
-                <div className="text-green-400 bg-green-400/10 p-3 rounded-lg text-sm flex items-center gap-2">
-                  <Shield className="w-4 h-4" /> Vault Unlocked
-                </div>
-              ) : (
-                <button
-                  onClick={deriveKey}
-                  className="w-full py-3 px-4 bg-gradient-to-r from-purple-600 to-blue-600 hover:from-purple-500 hover:to-blue-500 rounded-xl font-medium transition-all"
-                >
-                  Unlock Vault
-                </button>
-              )
-            ) : (
-              <p className="text-gray-500 text-sm">Connect your wallet to access your vault.</p>
-            )}
-          </div>
+      {/* Background Decorative Glows */}
+      <div className="absolute top-[-20%] left-[-10%] w-[50%] h-[50%] bg-purple-600/20 rounded-full blur-[120px] pointer-events-none" />
+      <div className="absolute bottom-[-20%] right-[-10%] w-[50%] h-[50%] bg-blue-600/20 rounded-full blur-[120px] pointer-events-none" />
 
-          <div className={`bg-gray-900 border border-gray-800 rounded-2xl p-6 shadow-xl ${!isConnectedSafe ? 'opacity-50 pointer-events-none' : ''}`}>
-            <h2 className="text-xl font-semibold mb-4 flex items-center gap-2">
-              <UploadCloud className="w-5 h-5 text-blue-400" /> Upload File
-            </h2>
-            <div className="space-y-4">
-              <input
-                type="file"
-                onChange={(e) => setSelectedFile(e.target.files?.[0] || null)}
-                className="block w-full text-sm text-gray-400 file:mr-4 file:py-2 file:px-4 file:rounded-lg file:border-0 file:text-sm file:font-semibold file:bg-blue-600 file:text-white hover:file:bg-blue-500 cursor-pointer"
-              />
-              <button
-                onClick={handleUpload}
-                disabled={!selectedFile || isUploading}
-                className="w-full py-3 px-4 bg-blue-600 hover:bg-blue-500 disabled:bg-gray-800 disabled:text-gray-500 rounded-xl font-medium transition-all flex justify-center items-center gap-2"
-              >
-                {isUploading ? (
-                  <span className="animate-pulse">Encrypting & Uploading...</span>
-                ) : (
-                  <>Upload Securely</>
-                )}
-              </button>
+      <div className="relative z-10 p-8">
+        <header className="max-w-6xl mx-auto flex flex-col md:flex-row justify-between items-center mb-16 gap-6">
+          <div className="flex items-center gap-3">
+            <div className="p-3 bg-gradient-to-br from-purple-500/20 to-blue-500/20 border border-white/10 rounded-xl backdrop-blur-md shadow-lg">
+              <Shield className="w-8 h-8 text-blue-400" />
+            </div>
+            <div>
+              <h1 className="text-3xl font-extrabold tracking-tight bg-clip-text text-transparent bg-gradient-to-r from-blue-400 via-indigo-400 to-purple-400">
+                Onion Vault
+              </h1>
+              <p className="text-sm text-gray-500 font-medium">Decentralized. Encrypted. Yours.</p>
             </div>
           </div>
-        </div>
-
-        {/* Right Column - File List */}
-        <div className="md:col-span-2">
-          <div className="bg-gray-900 border border-gray-800 rounded-2xl p-6 shadow-xl min-h-[500px]">
-            <h2 className="text-xl font-semibold mb-6 flex items-center gap-2">
-              <FileIcon className="w-5 h-5 text-gray-400" /> My Encrypted Files
-            </h2>
-            
-            {!isConnectedSafe ? (
-              <div className="flex flex-col items-center justify-center h-64 text-gray-500">
-                <Shield className="w-12 h-12 mb-4 opacity-20" />
-                <p>Connect wallet to view files</p>
-              </div>
-            ) : files.length === 0 ? (
-              <div className="flex flex-col items-center justify-center h-64 text-gray-500">
-                <FileIcon className="w-12 h-12 mb-4 opacity-20" />
-                <p>Your vault is empty</p>
-              </div>
-            ) : (
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                {files.map((file, idx) => (
-                  <div key={idx} className="bg-gray-800/50 border border-gray-700/50 p-4 rounded-xl flex flex-col justify-between group hover:border-blue-500/50 transition-colors">
-                    <div className="mb-4">
-                      <p className="font-medium text-gray-200 truncate" title={file.fileName}>{file.fileName}</p>
-                      <p className="text-xs text-gray-500 mt-1">
-                        {new Date(Number(file.timestamp) * 1000).toLocaleString()}
-                      </p>
-                      <p className="text-xs text-gray-600 mt-1 truncate" title={file.ipfsCID}>CID: {file.ipfsCID}</p>
-                    </div>
-                    <button
-                      onClick={() => handleView(file.ipfsCID, file.fileName)}
-                      className="flex items-center justify-center gap-2 w-full py-2 bg-gray-800 hover:bg-gray-700 rounded-lg text-sm font-medium transition-colors text-blue-400"
-                    >
-                      <Download className="w-4 h-4" /> Download & Decrypt
-                    </button>
-                  </div>
-                ))}
-              </div>
-            )}
+          <div className="shadow-2xl shadow-blue-900/20 rounded-xl">
+            <ConnectButton />
           </div>
-        </div>
+        </header>
+        
+        <main className="max-w-6xl mx-auto grid grid-cols-1 lg:grid-cols-3 gap-8">
+          
+          {/* Left Column - Actions */}
+          <div className="lg:col-span-1 space-y-8">
+            
+            {/* Vault Status Card */}
+            <div className="bg-white/5 backdrop-blur-xl border border-white/10 rounded-3xl p-7 shadow-2xl shadow-black/50 transition-all duration-300 hover:border-white/20">
+              <h2 className="text-lg font-bold mb-5 flex items-center gap-2 text-gray-200">
+                <Key className="w-5 h-5 text-purple-400" /> Cryptographic State
+              </h2>
+              {isConnectedSafe ? (
+                !isRightNetwork ? (
+                  <div className="text-yellow-400 bg-yellow-400/10 border border-yellow-400/20 p-4 rounded-xl text-sm font-medium flex items-center gap-2">
+                    Please connect to Localhost.
+                  </div>
+                ) : encryptionKey ? (
+                  <div className="text-emerald-400 bg-emerald-400/10 border border-emerald-400/20 p-4 rounded-xl text-sm font-medium flex items-center gap-2 animate-in fade-in zoom-in duration-500">
+                    <Shield className="w-5 h-5" /> Vault is Unlocked
+                  </div>
+                ) : (
+                  <button
+                    onClick={deriveKey}
+                    disabled={isDerivingKey}
+                    className="w-full py-3.5 px-4 bg-gradient-to-r from-purple-600 to-indigo-600 hover:from-purple-500 hover:to-indigo-500 rounded-xl font-semibold shadow-lg shadow-purple-900/30 transition-all duration-300 transform hover:-translate-y-0.5 active:translate-y-0 flex justify-center items-center gap-2"
+                  >
+                    {isDerivingKey ? <Loader2 className="w-5 h-5 animate-spin" /> : "Unlock Vault"}
+                  </button>
+                )
+              ) : (
+                <p className="text-gray-400 text-sm p-4 bg-white/5 rounded-xl border border-white/5 text-center">
+                  Wallet disconnected.
+                </p>
+              )}
+            </div>
 
-      </main>
+            {/* Upload Card */}
+            <div className={`bg-white/5 backdrop-blur-xl border border-white/10 rounded-3xl p-7 shadow-2xl shadow-black/50 transition-all duration-300 hover:border-white/20 ${(!isConnectedSafe || !isRightNetwork) ? 'opacity-40 pointer-events-none grayscale' : ''}`}>
+              <h2 className="text-lg font-bold mb-5 flex items-center gap-2 text-gray-200">
+                <UploadCloud className="w-5 h-5 text-blue-400" /> Encrypt & Upload
+              </h2>
+              <div className="space-y-5">
+                
+                <div className="relative group">
+                  <input
+                    type="file"
+                    id="file-upload"
+                    className="absolute inset-0 w-full h-full opacity-0 cursor-pointer z-10"
+                    onChange={(e) => setSelectedFile(e.target.files?.[0] || null)}
+                  />
+                  <div className={`w-full border-2 border-dashed ${selectedFile ? 'border-blue-500 bg-blue-500/10' : 'border-gray-700 bg-gray-800/50 group-hover:border-gray-500'} rounded-2xl p-6 text-center transition-all duration-300 flex flex-col items-center justify-center gap-3`}>
+                    <UploadCloud className={`w-8 h-8 ${selectedFile ? 'text-blue-400' : 'text-gray-500'}`} />
+                    <p className="text-sm font-medium text-gray-300 truncate w-full px-4">
+                      {selectedFile ? selectedFile.name : "Drag & drop or click to browse"}
+                    </p>
+                  </div>
+                </div>
+
+                <button
+                  onClick={handleUpload}
+                  disabled={!selectedFile || isUploading}
+                  className="w-full py-3.5 px-4 bg-gradient-to-r from-blue-600 to-cyan-600 hover:from-blue-500 hover:to-cyan-500 disabled:from-gray-800 disabled:to-gray-800 disabled:text-gray-500 rounded-xl font-semibold shadow-lg shadow-blue-900/30 transition-all duration-300 transform hover:-translate-y-0.5 active:translate-y-0 disabled:transform-none flex justify-center items-center gap-2"
+                >
+                  {isUploading ? (
+                    <>
+                      <Loader2 className="w-5 h-5 animate-spin" />
+                      Securing Data...
+                    </>
+                  ) : (
+                    "Upload Securely"
+                  )}
+                </button>
+              </div>
+            </div>
+          </div>
+
+          {/* Right Column - File List */}
+          <div className="lg:col-span-2">
+            <div className="bg-white/5 backdrop-blur-xl border border-white/10 rounded-3xl p-7 shadow-2xl shadow-black/50 min-h-[550px] flex flex-col transition-all duration-300 hover:border-white/20">
+              <h2 className="text-lg font-bold mb-6 flex items-center gap-2 text-gray-200">
+                <FileIcon className="w-5 h-5 text-indigo-400" /> My Secure Vault
+              </h2>
+              
+              {!isConnectedSafe ? (
+                <div className="flex-1 flex flex-col items-center justify-center text-gray-500 opacity-60">
+                  <Shield className="w-16 h-16 mb-4 text-gray-700" />
+                  <p className="font-medium">Connect wallet to view encrypted files</p>
+                </div>
+              ) : !isRightNetwork ? (
+                <div className="flex-1 flex flex-col items-center justify-center text-gray-500 opacity-60">
+                  <p className="font-medium text-yellow-500/80">Switch to the Localhost network</p>
+                </div>
+              ) : files.length === 0 ? (
+                <div className="flex-1 flex flex-col items-center justify-center text-gray-500 opacity-60">
+                  <FileIcon className="w-16 h-16 mb-4 text-gray-700" />
+                  <p className="font-medium">Your vault is currently empty</p>
+                  <p className="text-sm mt-2 text-gray-600">Upload a file to begin.</p>
+                </div>
+              ) : (
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-5 overflow-y-auto pr-2 custom-scrollbar">
+                  {files.map((file, idx) => (
+                    <div key={idx} className="bg-gray-900/60 border border-gray-700/50 p-5 rounded-2xl flex flex-col justify-between group hover:border-indigo-500/50 hover:bg-gray-800/60 transition-all duration-300 hover:shadow-lg hover:shadow-indigo-900/20 hover:-translate-y-1">
+                      <div className="mb-6">
+                        <div className="flex items-start justify-between gap-2 mb-2">
+                          <p className="font-semibold text-gray-200 truncate" title={file.fileName}>{file.fileName}</p>
+                          <span className="shrink-0 text-xs px-2 py-1 bg-white/5 rounded-md text-gray-400">
+                            {new Date(Number(file.timestamp) * 1000).toLocaleDateString()}
+                          </span>
+                        </div>
+                        <div className="bg-black/40 p-2 rounded-lg border border-white/5">
+                          <p className="text-[10px] text-gray-500 font-mono break-all line-clamp-2" title={file.ipfsCID}>
+                            {file.ipfsCID}
+                          </p>
+                        </div>
+                      </div>
+                      <button
+                        onClick={() => handleView(file.ipfsCID, file.fileName)}
+                        disabled={downloadingCid === file.ipfsCID}
+                        className="flex items-center justify-center gap-2 w-full py-2.5 bg-indigo-500/10 hover:bg-indigo-500/20 text-indigo-400 border border-indigo-500/20 hover:border-indigo-500/40 rounded-xl text-sm font-semibold transition-all duration-300 disabled:opacity-50 disabled:cursor-not-allowed"
+                      >
+                        {downloadingCid === file.ipfsCID ? (
+                          <><Loader2 className="w-4 h-4 animate-spin" /> Decrypting...</>
+                        ) : (
+                          <><Download className="w-4 h-4" /> Download</>
+                        )}
+                      </button>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+          </div>
+
+        </main>
+      </div>
     </div>
   );
 }
